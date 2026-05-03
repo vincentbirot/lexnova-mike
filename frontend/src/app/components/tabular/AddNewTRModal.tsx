@@ -222,7 +222,7 @@ export function AddNewTRModal({
                     <div className="flex items-center gap-1.5 text-xs text-gray-400">
                         {isProjectMode && projectName ? (
                             <>
-                                <span>Projects</span>
+                                <span>Matters</span>
                                 <span>›</span>
                                 <span>
                                     {projectName}
@@ -395,7 +395,7 @@ export function AddNewTRModal({
                                                   (selectedProject.cm_number
                                                       ? ` (#${selectedProject.cm_number})`
                                                       : "")
-                                                : "Select project…"}
+                                                : "Select matter…"}
                                         </span>
                                         <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0" />
                                     </button>
@@ -467,10 +467,10 @@ export function AddNewTRModal({
                                         loading={directoryLoading}
                                         selectedIds={selectedDocIds}
                                         onChange={setSelectedDocIds}
-                                        heading={isProjectMode ? "Project Documents" : "Documents"}
+                                        heading={isProjectMode ? "Matter Documents" : "Documents"}
                                         emptyMessage={
                                             isProjectMode || underProject
-                                                ? "No ready documents in this project"
+                                                ? "No ready documents in this matter"
                                                 : "No documents yet"
                                         }
                                     />

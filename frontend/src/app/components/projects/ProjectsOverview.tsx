@@ -142,7 +142,7 @@ export function ProjectsOverview() {
         setProjects((prev) => prev.filter((p) => !owned.includes(p.id)));
         if (blocked > 0) {
             setOwnerOnlyAction(
-                `delete ${blocked} of the selected projects — only the project owner can delete a project`,
+                `delete ${blocked} of the selected matters — only the matter owner can delete a matter`,
             );
         }
     }
@@ -178,13 +178,13 @@ export function ProjectsOverview() {
             {/* Page header */}
             <div className="flex items-center justify-between px-8 py-4">
                 <h1 className="text-2xl font-medium font-serif text-gray-900">
-                    Projects
+                    Matters
                 </h1>
                 <div className="flex items-center gap-2">
                     <HeaderSearchBtn
                         value={search}
                         onChange={setSearch}
-                        placeholder="Search projects…"
+                        placeholder="Search matters…"
                     />
                     <button
                         onClick={() => setModalOpen(true)}
@@ -269,10 +269,10 @@ export function ProjectsOverview() {
                             <>
                                 <FolderOpen className="h-8 w-8 text-gray-300 mb-4" />
                                 <p className="text-2xl font-medium font-serif text-gray-900">
-                                    Projects
+                                    Matters
                                 </p>
                                 <p className="mt-1 text-xs text-gray-400 max-w-xs">
-                                    Upload documents into projects and to
+                                    Upload documents into matters and to
                                     commence chats and tabular reviews with
                                     them.
                                 </p>
@@ -285,7 +285,7 @@ export function ProjectsOverview() {
                             </>
                         ) : (
                             <p className="text-sm text-gray-400">
-                                No {activeTab} projects
+                                No {activeTab} matters
                             </p>
                         )}
                     </div>

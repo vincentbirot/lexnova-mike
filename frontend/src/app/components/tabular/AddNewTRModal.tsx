@@ -370,7 +370,7 @@ export function AddNewTRModal({
                                     />
                                 </span>
                                 <span className="text-sm text-gray-600">
-                                    Create under a project
+                                    Create under a matter
                                 </span>
                             </button>
 
@@ -403,7 +403,7 @@ export function AddNewTRModal({
                                         <div className="absolute left-0 top-full z-20 mt-1 w-full rounded-xl border border-gray-100 bg-white shadow-lg overflow-y-auto max-h-48">
                                             {projects.length === 0 ? (
                                                 <p className="px-3 py-2 text-xs text-gray-400">
-                                                    No projects found
+                                                    No matters found
                                                 </p>
                                             ) : (
                                                 projects.map((p) => (

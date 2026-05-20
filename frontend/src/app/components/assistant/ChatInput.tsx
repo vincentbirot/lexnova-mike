@@ -67,10 +67,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     } | null>(null);
     const [model, setModel] = useSelectedModel();
     const { profile } = useUserProfile();
-    const apiKeys = {
-        claudeApiKey: profile?.claudeApiKey ?? null,
-        geminiApiKey: profile?.geminiApiKey ?? null,
-    };
+    const apiKeys = profile?.apiKeys;
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [docSelectorOpen, setDocSelectorOpen] = useState(false);
     const [workflowModalOpen, setWorkflowModalOpen] = useState(false);
@@ -116,7 +113,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     const handleSubmit = () => {
         const query = value.trim();
         if (!query || isLoading) return;
-        if (!isModelAvailable(model, apiKeys)) {
+        if (apiKeys && !isModelAvailable(model, apiKeys)) {
             setApiKeyModalProvider(getModelProvider(model));
             return;
         }
@@ -241,19 +238,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                                     )}
                                 />
                             )}
-                            {onProjectsClick && (
-                                <button
-                                    type="button"
-                                    onClick={onProjectsClick}
-                                    aria-label="Open matters"
-                                    className="flex items-center gap-1.5 rounded-lg px-2 h-8 text-sm text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
-                                >
-                                    <FolderOpen className="h-3.5 w-3.5" />
-                                    <span className="hidden sm:inline">
-                                        Matters
-                                    </span>
-                                </button>
-                            )}
                             {!hideWorkflowButton && (
                                 <button
                                     type="button"
@@ -268,6 +252,19 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                                     )}
                                     <span className="hidden sm:inline">
                                         Workflows
+                                    </span>
+                                </button>
+                            )}
+                            {onProjectsClick && (
+                                <button
+                                    type="button"
+                                    onClick={onProjectsClick}
+                                    aria-label="Open projects"
+                                    className="flex items-center gap-1.5 rounded-lg px-2 h-8 text-sm text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                                >
+                                    <FolderOpen className="h-3.5 w-3.5" />
+                                    <span className="hidden sm:inline">
+                                        Projects
                                     </span>
                                 </button>
                             )}

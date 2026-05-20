@@ -14,6 +14,15 @@ import { singleFileUpload } from "../lib/upload";
 export const projectsRouter = Router();
 const ALLOWED_TYPES = new Set(["pdf", "docx", "doc"]);
 
+function normalizeDocumentFilename(nextName: unknown, currentName: string) {
+  if (typeof nextName !== "string") return null;
+  const trimmed = nextName.trim().slice(0, 200);
+  if (!trimmed) return null;
+  if (/\.[a-z0-9]{1,6}$/i.test(trimmed)) return trimmed;
+  const ext = currentName.match(/\.[a-z0-9]{1,6}$/i)?.[0] ?? "";
+  return `${trimmed}${ext}`;
+}
+
 // GET /projects
 projectsRouter.get("/", requireAuth, async (req, res) => {
   const userId = res.locals.userId as string;
@@ -31,7 +40,7 @@ projectsRouter.get("/", requireAuth, async (req, res) => {
     ? await db
         .from("projects")
         .select("*")
-        .contains("shared_with", [userEmail])
+        .filter("shared_with", "cs", JSON.stringify([userEmail]))
         .neq("user_id", userId)
         .order("created_at", { ascending: false })
     : { data: [], error: null };
@@ -74,6 +83,7 @@ projectsRouter.get("/", requireAuth, async (req, res) => {
 // POST /projects
 projectsRouter.post("/", requireAuth, async (req, res) => {
   const userId = res.locals.userId as string;
+  const userEmail = res.locals.userEmail as string | undefined;
   const { name, cm_number, shared_with } = req.body as {
     name: string;
     cm_number?: string;
@@ -81,6 +91,23 @@ projectsRouter.post("/", requireAuth, async (req, res) => {
   };
   if (!name?.trim())
     return void res.status(400).json({ detail: "name is required" });
+  const normalizedUserEmail = userEmail?.trim().toLowerCase();
+  const cleanedSharedWith: string[] = [];
+  const seenSharedEmails = new Set<string>();
+  if (Array.isArray(shared_with)) {
+    for (const raw of shared_with) {
+      if (typeof raw !== "string") continue;
+      const e = raw.trim().toLowerCase();
+      if (!e || seenSharedEmails.has(e)) continue;
+      if (normalizedUserEmail && e === normalizedUserEmail) {
+        return void res
+          .status(400)
+          .json({ detail: "You cannot share a project with yourself." });
+      }
+      seenSharedEmails.add(e);
+      cleanedSharedWith.push(e);
+    }
+  }
 
   const db = createServerSupabase();
   const { data, error } = await db
@@ -89,7 +116,7 @@ projectsRouter.post("/", requireAuth, async (req, res) => {
       user_id: userId,
       name: name.trim(),
       cm_number: cm_number ?? null,
-      shared_with: shared_with ?? [],
+      shared_with: cleanedSharedWith,
     })
     .select("*")
     .single();
@@ -229,18 +256,25 @@ projectsRouter.get("/:projectId/people", requireAuth, async (req, res) => {
 // PATCH /projects/:projectId
 projectsRouter.patch("/:projectId", requireAuth, async (req, res) => {
   const userId = res.locals.userId as string;
+  const userEmail = res.locals.userEmail as string | undefined;
   const { projectId } = req.params;
   const updates: Record<string, unknown> = {};
   if (req.body.name != null) updates.name = req.body.name;
   if (req.body.cm_number != null) updates.cm_number = req.body.cm_number;
   if (Array.isArray(req.body.shared_with)) {
     // Normalise: lowercase + dedupe + drop empties.
+    const normalizedUserEmail = userEmail?.trim().toLowerCase();
     const seen = new Set<string>();
     const cleaned: string[] = [];
     for (const raw of req.body.shared_with) {
       if (typeof raw !== "string") continue;
       const e = raw.trim().toLowerCase();
       if (!e || seen.has(e)) continue;
+      if (normalizedUserEmail && e === normalizedUserEmail) {
+        return void res
+          .status(400)
+          .json({ detail: "You cannot share a project with yourself." });
+      }
       seen.add(e);
       cleaned.push(e);
     }
@@ -437,6 +471,51 @@ projectsRouter.post(
   },
 );
 
+// PATCH /projects/:projectId/documents/:documentId — rename a project document
+projectsRouter.patch("/:projectId/documents/:documentId", requireAuth, async (req, res) => {
+  const userId = res.locals.userId as string;
+  const userEmail = res.locals.userEmail as string | undefined;
+  const { projectId, documentId } = req.params;
+  const db = createServerSupabase();
+
+  const access = await checkProjectAccess(projectId, userId, userEmail, db);
+  if (!access.ok)
+    return void res.status(404).json({ detail: "Project not found" });
+
+  const { data: doc } = await db
+    .from("documents")
+    .select("id, filename, current_version_id")
+    .eq("id", documentId)
+    .eq("project_id", projectId)
+    .single();
+  if (!doc)
+    return void res.status(404).json({ detail: "Document not found" });
+
+  const filename = normalizeDocumentFilename(req.body?.filename, doc.filename as string);
+  if (!filename)
+    return void res.status(400).json({ detail: "filename is required" });
+
+  const { data: updated, error } = await db
+    .from("documents")
+    .update({ filename, updated_at: new Date().toISOString() })
+    .eq("id", documentId)
+    .eq("project_id", projectId)
+    .select("*")
+    .single();
+  if (error || !updated)
+    return void res.status(404).json({ detail: "Document not found" });
+
+  if (doc.current_version_id) {
+    await db
+      .from("document_versions")
+      .update({ display_name: filename })
+      .eq("id", doc.current_version_id)
+      .eq("document_id", documentId);
+  }
+
+  res.json(updated);
+});
+
 // POST /projects/:projectId/documents
 projectsRouter.post(
   "/:projectId/documents",
@@ -526,11 +605,14 @@ projectsRouter.patch("/:projectId/folders/:folderId", requireAuth, async (req, r
   if ("parent_folder_id" in body) {
     // Cycle check: walk up the tree from the proposed parent to ensure folderId is not an ancestor
     if (body.parent_folder_id) {
+      const parent = await loadProjectFolder(db, projectId, body.parent_folder_id);
+      if (!parent) return void res.status(404).json({ detail: "Parent folder not found" });
+
       let cur: string | null = body.parent_folder_id;
       while (cur) {
         if (cur === folderId) return void res.status(400).json({ detail: "Cannot move a folder into itself or a descendant" });
-        const { data: p }: { data: { parent_folder_id: string | null } | null } =
-          await db.from("project_subfolders").select("parent_folder_id").eq("id", cur).single();
+        const p = await loadProjectFolder(db, projectId, cur);
+        if (!p) return void res.status(404).json({ detail: "Parent folder not found" });
         cur = p?.parent_folder_id ?? null;
       }
     }
@@ -555,8 +637,11 @@ projectsRouter.delete("/:projectId/folders/:folderId", requireAuth, async (req, 
   const access = await checkProjectAccess(projectId, userId, userEmail, db);
   if (!access.ok) return void res.status(404).json({ detail: "Project not found" });
 
+  const folder = await loadProjectFolder(db, projectId, folderId);
+  if (!folder) return void res.status(404).json({ detail: "Folder not found" });
+
   // Move direct documents to root before cascade-deleting subfolders
-  await db.from("documents").update({ folder_id: null }).eq("folder_id", folderId);
+  await db.from("documents").update({ folder_id: null }).eq("folder_id", folderId).eq("project_id", projectId);
 
   const { error } = await db.from("project_subfolders")
     .delete().eq("id", folderId).eq("project_id", projectId);
@@ -575,6 +660,11 @@ projectsRouter.patch("/:projectId/documents/:documentId/folder", requireAuth, as
   const access = await checkProjectAccess(projectId, userId, userEmail, db);
   if (!access.ok) return void res.status(404).json({ detail: "Project not found" });
 
+  if (folder_id) {
+    const folder = await loadProjectFolder(db, projectId, folder_id);
+    if (!folder) return void res.status(404).json({ detail: "Folder not found" });
+  }
+
   const { data, error } = await db.from("documents")
     .update({ folder_id: folder_id ?? null, updated_at: new Date().toISOString() })
     .eq("id", documentId).eq("project_id", projectId)
@@ -582,6 +672,20 @@ projectsRouter.patch("/:projectId/documents/:documentId/folder", requireAuth, as
   if (error || !data) return void res.status(404).json({ detail: "Document not found" });
   res.json(data);
 });
+
+async function loadProjectFolder(
+  db: ReturnType<typeof createServerSupabase>,
+  projectId: string,
+  folderId: string,
+): Promise<{ id: string; parent_folder_id: string | null } | null> {
+  const { data } = await db
+    .from("project_subfolders")
+    .select("id, parent_folder_id")
+    .eq("id", folderId)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  return (data as { id: string; parent_folder_id: string | null } | null) ?? null;
+}
 
 export async function handleDocumentUpload(
   req: import("express").Request,

@@ -97,6 +97,62 @@ export async function deleteAccount(): Promise<void> {
     return apiRequest<void>("/user/account", { method: "DELETE" });
 }
 
+export interface UserProfile {
+    displayName: string | null;
+    organisation: string | null;
+    messageCreditsUsed: number;
+    creditsResetDate: string;
+    creditsRemaining: number;
+    tier: string;
+    tabularModel: string;
+    apiKeyStatus: ApiKeyStatus;
+}
+
+export async function getUserProfile(): Promise<UserProfile> {
+    return apiRequest<UserProfile>("/user/profile");
+}
+
+export async function updateUserProfile(payload: {
+    displayName?: string | null;
+    organisation?: string | null;
+    tabularModel?: string;
+}): Promise<UserProfile> {
+    return apiRequest<UserProfile>("/user/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+}
+
+export type ApiKeyProvider = "claude" | "gemini" | "openai";
+export type ApiKeySource = "user" | "env" | null;
+export type ApiKeyState = Record<
+    ApiKeyProvider,
+    {
+        configured: boolean;
+        source: ApiKeySource;
+    }
+>;
+
+export type ApiKeyStatus = Record<ApiKeyProvider, boolean> & {
+    sources?: Partial<Record<ApiKeyProvider, ApiKeySource>>;
+};
+
+export async function getApiKeyStatus(): Promise<ApiKeyStatus> {
+    return apiRequest<ApiKeyStatus>("/user/api-keys");
+}
+
+export async function saveApiKey(
+    provider: ApiKeyProvider,
+    apiKey: string | null,
+): Promise<ApiKeyStatus> {
+    return apiRequest<ApiKeyStatus>(`/user/api-keys/${provider}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: apiKey }),
+    });
+}
+
 export async function getProject(projectId: string): Promise<MikeProject> {
     return apiRequest<MikeProject>(`/projects/${projectId}`);
 }
@@ -212,6 +268,21 @@ export async function moveDocumentToFolder(
     );
 }
 
+export async function renameProjectDocument(
+    projectId: string,
+    documentId: string,
+    filename: string,
+): Promise<MikeDocument> {
+    return apiRequest<MikeDocument>(
+        `/projects/${projectId}/documents/${documentId}`,
+        {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename }),
+        },
+    );
+}
+
 export async function addDocumentToProject(
     projectId: string,
     documentId: string,
@@ -230,9 +301,7 @@ export interface MikeDocumentVersion {
     display_name: string | null;
 }
 
-export async function listDocumentVersions(
-    documentId: string,
-): Promise<{
+export async function listDocumentVersions(documentId: string): Promise<{
     current_version_id: string | null;
     versions: MikeDocumentVersion[];
 }> {
@@ -321,9 +390,7 @@ export async function getDocumentUrl(
     documentId: string,
     versionId?: string | null,
 ): Promise<{ url: string; filename: string; version_id: string | null }> {
-    const qs = versionId
-        ? `?version_id=${encodeURIComponent(versionId)}`
-        : "";
+    const qs = versionId ? `?version_id=${encodeURIComponent(versionId)}` : "";
     return apiRequest(`/single-documents/${documentId}/url${qs}`);
 }
 
@@ -361,8 +428,11 @@ export async function createChat(payload?: {
     });
 }
 
-export async function listChats(): Promise<MikeChat[]> {
-    return apiRequest<MikeChat[]>("/chat");
+export async function listChats(options?: { limit?: number }): Promise<MikeChat[]> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set("limit", String(options.limit));
+    const query = params.toString();
+    return apiRequest<MikeChat[]>(`/chat${query ? `?${query}` : ""}`);
 }
 
 export async function listProjectChats(projectId: string): Promise<MikeChat[]> {
@@ -483,9 +553,7 @@ export async function streamProjectChat(payload: {
 export async function listTabularReviews(
     projectId?: string,
 ): Promise<TabularReview[]> {
-    const qs = projectId
-        ? `?project_id=${encodeURIComponent(projectId)}`
-        : "";
+    const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
     return apiRequest<TabularReview[]>(`/tabular-review${qs}`);
 }
 
@@ -794,9 +862,7 @@ export async function shareWorkflow(
     });
 }
 
-export async function listWorkflowShares(
-    workflowId: string,
-): Promise<
+export async function listWorkflowShares(workflowId: string): Promise<
     {
         id: string;
         shared_with_email: string;
